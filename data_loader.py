@@ -2,6 +2,7 @@ from scipy.io import loadmat
 import pandas as pd
 import glob
 import os
+from tqdm import tqdm
 
 
 DATA_LOCATION = os.path.join(os.path.dirname(__file__), 'input')
@@ -11,8 +12,10 @@ def data_files():
     return glob.glob(os.path.join(DATA_LOCATION, '*', '*.mat'))
 
 
-def load_data():
-    for filename in data_files():
+def load_data(max_results=99999999):
+    files = data_files()
+    max_results = min(max_results, len(files))
+    for filename in tqdm(files[:max_results]):
         yield extract_path(filename), load_matlab_file(filename)
 
 
