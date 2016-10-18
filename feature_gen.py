@@ -1,9 +1,12 @@
 from data_loader import load_data
 import numpy as np
+from joblib import Memory
+mem = Memory(cachedir='/tmp/joblib')
 
 
+@mem.cache
 def create_train():
-    gen = load_data(160)
+    gen = load_data(600)
     X = []
     y = []
     for file_info, (data, sequence) in gen:
