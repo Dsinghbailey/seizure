@@ -1,7 +1,7 @@
 from data_loader import load_data
 import numpy as np
 from joblib import Memory
-mem = Memory(cachedir='/tmp/joblib')
+mem = Memory(cachedir='tmp/joblib')
 
 
 @mem.cache
@@ -22,9 +22,34 @@ def debug_on_sequence_weirdness(i, sequence):
         pdb.set_trace()
 
 
+# The fft measures up to 150hz, but we only care about frequencies up to 50hz
+def trim_fft(fft):
+    return fft[:len(fft) // 3]
+
+# we have 150 * 10 * 60 samples
+# we have 150 * 10 * 30 frequencies in the fft
+# frequencies range from 0 hz to 150 hz
+# so fft element at index i has frequency i / (10 * 30)
+
+def smooth_fft(fft, stride=10):
+    # Average adjancent frequencies proportional to the frequency.
+    i = 0
+    while i < len(fft):
+        bucket_size_elems = max(1, i / stride)
+        new_i = i + bucket_size_elems
+        yield fft[i:min(len(fft), new_i)].mean()
+        i = new_i
+
+
+def regularize_fft(fft):
+    fft_magnitude = np.absolute(fft)
+    return np.array(list(smooth_fft(trim_fft(fft_magnitude))))
+
+
 def fft(data):
     for i in range(data.shape[1]):
-        yield np.absolute(np.fft.rfft(data.iloc[:, i]))
+        yield regularize_fft(
+            np.fft.rfft(data.iloc[:, i]))
 
 
 def results(file_info):

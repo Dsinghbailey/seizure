@@ -8,8 +8,8 @@ from tqdm import tqdm
 DATA_LOCATION = os.path.join(os.path.dirname(__file__), 'input')
 
 
-def data_files():
-    return glob.glob(os.path.join(DATA_LOCATION, '*', '*.mat'))
+def data_files(prefix='train'):
+    return glob.glob(os.path.join(DATA_LOCATION, prefix + '*', '*.mat'))
 
 
 def load_data(max_results=99999999):
