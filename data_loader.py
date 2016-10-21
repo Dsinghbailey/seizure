@@ -5,6 +5,7 @@ import os
 from tqdm import tqdm
 
 
+EXPECTED_SAMPLE_RATE = 400
 DATA_LOCATION = os.path.join(os.path.dirname(__file__), 'input')
 
 
@@ -39,6 +40,9 @@ def load_matlab_file(path):
     sequence = -1
     if 'sequence' in names:
         sequence = mat['dataStruct']['sequence']
+
+    sample_rate = mat['dataStruct']['iEEGsamplingRate']
+    assert sample_rate == EXPECTED_SAMPLE_RATE, 'Got a sample rate of %s' % sample_rate
 
     df = pd.DataFrame(ndata['data'], columns=ndata['channelIndices'][0])
     return df, sequence

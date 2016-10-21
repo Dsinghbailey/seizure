@@ -22,7 +22,7 @@ def debug_on_sequence_weirdness(i, sequence):
         pdb.set_trace()
 
 
-# The fft measures up to 150hz, but we only care about frequencies up to 50hz
+# The fft measures up to 200hz, but we only care about frequencies up to 50hz
 def trim_fft(fft):
     return fft[:len(fft) // 3]
 
