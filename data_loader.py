@@ -13,11 +13,11 @@ def data_files(prefix='train'):
     return glob.glob(os.path.join(DATA_LOCATION, prefix + '*', '*.mat'))
 
 
-def load_data(max_results=99999999):
-    files = data_files()
+def load_metadata(max_results=99999999, prefix='train'):
+    files = data_files(prefix=prefix)
     max_results = min(max_results, len(files))
     for filename in tqdm(files[:max_results]):
-        yield extract_path(filename), load_matlab_file(filename)
+        yield extract_path(filename), filename
 
 
 def extract_path(filename):
@@ -25,7 +25,9 @@ def extract_path(filename):
     arr = id_str.split("_")
     label = {'patient': int(arr[0]),
              'id': int(arr[1]),
-             'result': int(arr[2])}
+             }
+    if len(arr) > 2:
+        label['result'] = int(arr[2])
     return label
 
 
@@ -37,6 +39,7 @@ def load_matlab_file(path):
     mat = loadmat(path)
     names = mat['dataStruct'].dtype.names
     ndata = {n: mat['dataStruct'][n][0, 0] for n in names}
+
     sequence = -1
     if 'sequence' in names:
         sequence = mat['dataStruct']['sequence']

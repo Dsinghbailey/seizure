@@ -1,25 +1,46 @@
-from data_loader import load_data
+import os
+
 import numpy as np
+from sklearn.preprocessing import normalize
 from joblib import Memory
-mem = Memory(cachedir='tmp/joblib')
+
+from data_loader import load_metadata, load_matlab_file
+
+
+mem = Memory(cachedir=os.path.join('tmp', 'joblib'))
+
+
+def create_train(n=99999999, prefix='train'):
+    gen = load_metadata(n, prefix=prefix)
+    xs = []
+    ys = []
+    for file_info, filename in gen:
+        X, y = features_from_mat(file_info, filename)
+        xs.append(X)
+        ys.append(y)
+
+    xs = postprocess_features(np.vstack(xs))
+    return xs, ys
+
+
+def precompute_features():
+    create_train(prefix='train')
+    create_train(prefix='test')
+
+
+def postprocess_features(X):
+    # Xlog = np.log(X + 0.0000000001)
+    # X = np.hstack([Xlog, X])
+    X = normalize(X, axis=0, copy=False)
+    return X
 
 
 @mem.cache
-def create_train():
-    gen = load_data(600)
-    X = []
-    y = []
-    for file_info, (data, sequence) in gen:
-        X.append(np.concatenate(list(fft(data))))
-        y.append(results(file_info))
-
-    return (X, y)
-
-
-def debug_on_sequence_weirdness(i, sequence):
-    if i % 6 != sequence % 6:
-        import pdb
-        pdb.set_trace()
+def features_from_mat(file_info, filename):
+    data, _sequence = load_matlab_file(filename)
+    X = np.concatenate(list(fft(data)))
+    y = results(file_info)
+    return X, y
 
 
 # The fft measures up to 200hz, but we only care about frequencies up to 50hz
@@ -53,4 +74,6 @@ def fft(data):
 
 
 def results(file_info):
-    return file_info['result']
+    return file_info.get('result')
+
+
