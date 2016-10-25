@@ -9,12 +9,14 @@ EXPECTED_SAMPLE_RATE = 400
 DATA_LOCATION = os.path.join(os.path.dirname(__file__), 'input')
 
 
-def data_files(prefix='train'):
-    return glob.glob(os.path.join(DATA_LOCATION, prefix + '*', '*.mat'))
+def data_files(prefix='train', patient='*'):
+    return glob.glob(os.path.join(DATA_LOCATION,
+                                  '%s_%s' % (prefix, patient),
+                                  '*.mat'))
 
 
-def load_metadata(max_results=99999999, prefix='train'):
-    files = data_files(prefix=prefix)
+def load_metadata(max_results=99999999, patient='*', prefix='train'):
+    files = data_files(prefix=prefix, patient=patient)
     max_results = min(max_results, len(files))
     for filename in tqdm(files[:max_results]):
         yield extract_path(filename), filename
@@ -23,9 +25,10 @@ def load_metadata(max_results=99999999, prefix='train'):
 def extract_path(filename):
     id_str = os.path.basename(filename)[:-4]
     arr = id_str.split("_")
-    label = {'patient': int(arr[0]),
-             'id': int(arr[1]),
-             }
+    label = {
+        'patient': int(arr[0]),
+        'id': int(arr[1]),
+    }
     if len(arr) > 2:
         label['result'] = int(arr[2])
     return label
