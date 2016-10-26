@@ -1,9 +1,11 @@
 import numpy as np
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import GroupShuffleSplit, cross_val_score, RandomizedSearchCV
+from sklearn.model_selection import GroupShuffleSplit, \
+    cross_val_score, RandomizedSearchCV
 from sklearn.pipeline import Pipeline
 from sklearn.random_projection import GaussianRandomProjection
+import itertools as it
 
 import math
 import datetime
@@ -11,7 +13,7 @@ import random
 import os
 import pprint
 
-from feature_gen import create_train, precompute_features
+from feature_gen import create_train, precompute_features,
 from data_loader import load_metadata
 
 
@@ -70,31 +72,24 @@ def patient_hour(filename):
 
 def cv(patient, X, y, count=3, test_size=0.3, random_seed=None):
     hour_list = map(patient_hour, filenames(patient, 'train'))
-
+    multiple = int(X.shape[0])/len(hour_list)
+    hour_list = list(it.repeat(hour, multiple) for hour in hour_list)
     return GroupShuffleSplit(count, test_size=test_size,
                              random_state=random_seed
     ).split(X, y, groups=hour_list)
 
 
-def log_learn():
+def sub_learn(patient=1):
     # precompute_features()
     clfs = {}
-    for patient in (1, 2, 3):
-      X, y = create_train(patient=patient)
-      print X.shape
-      clf = find_hyperparameters(patient, X, y, CLS_GBM, PARAMS_GBM)
-      cv_score(patient, clf, X, y)
-      clf.fit(X, y)
-      clfs[patient] = clf
+    X, y = create_train(patient=patient)
+    print X.shape
+    clf = find_hyperparameters(patient, X, y, CLS_GBM, PARAMS_GBM)
+    cv_score(patient, clf, X, y)
+    clf.fit(X, y)
+    yield upper_features(clf, X, hour_list), prep_y(y, hour_list)
 
-    with open(DESTINATION, 'w') as fp:
-      fp.write('File,Class\n')
-      make_submission(clfs, fp)
-
-
-DESTINATION = 'submission_{:%Y-%m-%d_%H-%M-%S}.out'.format(datetime.datetime.now())
-
-
+    
 def filenames(patient, prefix):
     return [os.path.basename(fn) for (_, fn) in
             load_metadata(patient=patient,
@@ -102,11 +97,17 @@ def filenames(patient, prefix):
                           prefix=prefix)]
 
 
-def make_submission(clfs, fp):
-    for patient in [1,2,3]:
-      X_test, _ = create_train(patient=patient, prefix='test')
-      y_submission = clfs[patient].predict_proba(X_test)[:,1]
+def upper_features(clf, X, patient, prefix='train'):
+    hour_list = map(patient_hour, filenames(patient, prefix))
+    hour_list = list(set(hour_list))
+    row_size = int(X.shape[0])/len(hour_list)
+    features = np.array()
+    for hour in range(len(hour_list)):
+        row = []
+        for i in range(row_size):
+            row.append(X[i+hour*row_size])
+        features.append(clf.predict_proba[row])
+    return features
 
-      for filename, proba in zip(filenames(patient, 'test'),
-                                 y_submission):
-          fp.write('%s,%s\n' % (filename, proba))
+def prep_y(y):
+    return y[0::6]

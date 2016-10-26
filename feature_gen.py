@@ -8,6 +8,8 @@ from data_loader import load_metadata, load_matlab_file
 
 
 mem = Memory(cachedir=os.path.join('tmp', 'joblib'))
+SIZE = 8 * 300
+OVERLAP = .5
 
 
 def create_train(prefix='train', patient='*', n=99999999):
@@ -63,9 +65,14 @@ def rebucket(X, stride):
 @mem.cache
 def features_from_mat(file_info, filename, stride=20):
     data, _sequence = load_matlab_file(filename)
-    X = np.concatenate(list(fft(data, stride=stride)))
-    y = results(file_info)
-    return X, y
+    for i in range(data.shape[0]/(SIZE * OVERLAP)):
+        start = SIZE * i * OVERLAP
+        fin = SIZE * (i * OVERLAP + 1)
+        X = np.concatenate(list(fft(data[start:fin, :], stride=stride)))
+        y = results(file_info)
+        yield X, y
+
+
 
 
 # The fft measures up to 200hz, but we only care about frequencies up to 50hz
