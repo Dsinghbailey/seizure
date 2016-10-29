@@ -27,15 +27,15 @@ def make_submission(clfs, fp, patient):
 def main(clfs=None):
     with open(DESTINATION + '.out', 'w') as fp:
         clfs = clfs or {}
+        fp.write('File,Class\n')
         for patient in [1, 2, 3]:
             clf, X, y = sub_learn(patient=patient)
             if patient not in clfs:
                 clfs[patient] = clf, learn(X, y)
-            fp.write('File,Class\n')
             make_submission(clfs, fp, patient)
 
-    with open(DESTINATION + '.pickle', 'w') as fp:
-          pickle.dump(clfs, fp)
+    # with open(DESTINATION + '.pickle', 'w') as fp:
+    #       pickle.dump(clfs, fp)
 
 
 if __name__ == '__main__':
