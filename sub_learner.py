@@ -4,8 +4,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GroupShuffleSplit, \
     cross_val_score, RandomizedSearchCV
 from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import Normalizer
 from sklearn.random_projection import GaussianRandomProjection
-import itertools as it
 
 import math
 import datetime
@@ -13,7 +13,7 @@ import random
 import os
 import pprint
 
-from feature_gen import create_train, precompute_features,
+from feature_gen import create_train, results
 from data_loader import load_metadata
 
 
@@ -33,9 +33,11 @@ PARAMS_GBM = {
     # 'transform__n_components': [60, 80, 120, 160, 240]
 }
 
-CLS_LOG_REG = LogisticRegression()
+CLS_LOG_REG = Pipeline([
+    ('normalize', Normalizer()),
+    ('clf', LogisticRegression())])
 PARAMS_LOG_REG = {
-    'C': [0.0125, 0.025, 0.05, 0.1, 0.2, .4, .8, 1.2, 2.5, 5, 10, 20, 40, 80, 160]
+    'clf__C': [0.0125, 0.025, 0.05, 0.1, 0.2, .4, .8, 1.2, 2.5, 5, 10, 20, 40, 80, 160]
 }
 
 
@@ -43,10 +45,10 @@ def find_hyperparameters(patient, X, y, cls, params):
     clf = RandomizedSearchCV(
         cls,
         params,
-        verbose=3,
-        n_iter=10,
+        verbose=1,
+        n_iter=1,
         iid=False,
-        cv=list(cv(patient, X, y, count=5, random_seed=0)),
+        cv=list(cv(patient, X, y, count=3, random_seed=0)),
         scoring='roc_auc',
         n_jobs=4
     )
@@ -58,38 +60,44 @@ def find_hyperparameters(patient, X, y, cls, params):
 
 def cv_score(patient, clf, X, y):
     scores = cross_val_score(clf, X, y,
-                             cv=list(cv(patient, X, y, count=20,
+                             verbose=1,
+                             cv=list(cv(patient, X, y, count=1,
                                         random_seed=2016)),
                              scoring='roc_auc', n_jobs=3)
     print scores
     print scores.mean()
 
 
-def patient_hour(filename):
-    patient, hour, _ = filename.split('_')
-    return (int(hour) / 6) * 1000 + int(patient)
+def file_hash(filename):
+    parts = filename[:-4].split('_')
+    outcome = 0
+    if len(parts) == 3:
+        patient, hour, outcome = parts
+    else:
+        patient, hour = parts
+    return ((int(hour)-1) / 6) * 1000 + int(patient) * 10 + int(outcome)
 
 
 def cv(patient, X, y, count=3, test_size=0.3, random_seed=None):
-    hour_list = map(patient_hour, filenames(patient, 'train'))
+    hour_list = map(file_hash, filenames(patient, 'train'))
     multiple = int(X.shape[0])/len(hour_list)
-    hour_list = list(it.repeat(hour, multiple) for hour in hour_list)
+    hour_list = list(hour for hour in hour_list
+                          for _ in range(multiple))
     return GroupShuffleSplit(count, test_size=test_size,
                              random_state=random_seed
     ).split(X, y, groups=hour_list)
 
 
 def sub_learn(patient=1):
-    # precompute_features()
-    clfs = {}
     X, y = create_train(patient=patient)
-    print X.shape
-    clf = find_hyperparameters(patient, X, y, CLS_GBM, PARAMS_GBM)
+    clf = find_hyperparameters(patient, X, y, CLS_LOG_REG, PARAMS_LOG_REG)
     cv_score(patient, clf, X, y)
     clf.fit(X, y)
-    yield upper_features(clf, X, hour_list), prep_y(y, hour_list)
 
-    
+    X_meta = upper_features(clf, X, patient)
+    return clf, X_meta, y_hours(patient)
+
+
 def filenames(patient, prefix):
     return [os.path.basename(fn) for (_, fn) in
             load_metadata(patient=patient,
@@ -98,16 +106,23 @@ def filenames(patient, prefix):
 
 
 def upper_features(clf, X, patient, prefix='train'):
-    hour_list = map(patient_hour, filenames(patient, prefix))
+    hour_list = map(file_hash, filenames(patient, prefix))
     hour_list = list(set(hour_list))
-    row_size = int(X.shape[0])/len(hour_list)
-    features = np.array()
+    segments_per_hour = int(X.shape[0])/len(hour_list)
+    # each row is an hour, with a feature per segment.
+    featuress = []
     for hour in range(len(hour_list)):
-        row = []
-        for i in range(row_size):
-            row.append(X[i+hour*row_size])
-        features.append(clf.predict_proba[row])
-    return features
+        start = hour*segments_per_hour
+        features = clf.predict_proba(
+            X[start:(start + segments_per_hour), :])[:, 1]
+        featuress.append(np.transpose(features))
+    return np.vstack(featuress)
 
-def prep_y(y):
-    return y[0::6]
+
+def y_hours(patient):
+    y_10_min = np.array([
+        results(file_info)
+        for file_info, _ in load_metadata(max_results=99999,
+                                          prefix='train',
+                                          patient=patient)])
+    return y_10_min[0::6]

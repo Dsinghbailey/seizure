@@ -9,10 +9,25 @@ EXPECTED_SAMPLE_RATE = 400
 DATA_LOCATION = os.path.join(os.path.dirname(__file__), 'input')
 
 
+def sort_data_by_key(fn):
+    """We need to group similar hours together.
+
+    First sort by target and then by index.
+    """
+    parts = os.path.basename(fn)[:-4].split('_')
+    if len(parts) == 2:
+        return int(parts[-1])
+    else:
+        _patient, index, target = parts
+        return (int(target), int(index))
+
+
 def data_files(prefix='train', patient='*'):
-    return glob.glob(os.path.join(DATA_LOCATION,
-                                  '%s_%s' % (prefix, patient),
-                                  '*.mat'))
+    files = glob.glob(os.path.join(DATA_LOCATION,
+                                   '%s_%s' % (prefix, patient),
+                                   '*.mat'))
+    files.sort(key=sort_data_by_key)
+    return files
 
 
 def load_metadata(max_results=99999999, patient='*', prefix='train'):

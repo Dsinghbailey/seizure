@@ -2,27 +2,38 @@ import os
 
 import numpy as np
 from sklearn.preprocessing import normalize
-from joblib import Memory
+from joblib import Memory, Parallel, delayed
+# from joblib.pool import has_shareable_memory
+from multiprocessing import Pool
 
 from data_loader import load_metadata, load_matlab_file
 
 
 mem = Memory(cachedir=os.path.join('tmp', 'joblib'))
-SIZE = 8 * 300
+FREQ = 400
+SIZE = 8 * FREQ
 OVERLAP = .5
 
 
+@mem.cache
 def create_train(prefix='train', patient='*', n=99999999):
+    """Load data from disk and return features and targets."""
     gen = load_metadata(max_results=n, prefix=prefix, patient=patient)
-    xs = []
-    ys = []
-    for file_info, filename in gen:
-        X, y = features_from_mat(file_info, filename)
-        xs.append(X)
-        ys.append(y)
 
-    xs = postprocess_features(np.vstack(xs))
-    return xs, ys
+    data_setss = Parallel(n_jobs=4, max_nbytes=1e6)(
+        delayed(features_from_mat)(file_info, filename)
+        for file_info, filename in gen
+    )
+
+    xss = []
+    yss = []
+    for block_set in zip(*data_setss):
+        xs, ys = zip(*block_set)
+        xss.append(xs)
+        yss.extend(ys)
+
+    X = np.vstack(xss)
+    return X, yss
 
 
 def precompute_features():
@@ -31,64 +42,63 @@ def precompute_features():
 
 
 def postprocess_features(X):
+    """Normalizes and re-buckets the features."""
     # Xlog = np.log(X + 0.0000000001)
     # X = np.hstack([Xlog, X])
     X = normalize(X, axis=0, copy=False)
-    n = X.shape[1]
-    band_size = n / 10
-    X = np.vstack([
-        np.hstack([[X[j, 0]]] +
-                  [X[j, i*band_size+1:i*band_size+1+band_size] for i in range(10)]
-        )
-        for j in range(X.shape[0])
-    ])
-    # X_smooth = np.vstack([
-    #     rebucket(X[i, :], stride=3)
-    #     for i in range(X.shape[0])
-    # ])
+    return X
 
+def bands(X, n_bands=10):
+    n = X.shape[0]
+    band_size = n / n_bands
+    X = np.hstack(
+        [[X[0]]] +
+        [X[i*band_size+1:i*band_size+1+band_size].mean()
+         for i in range(10)])
     return X
 
 
-def rebucket(X, stride):
-    n_col = 16
-    n = X.shape[0]
-    indices = range(0, n, n / n_col)
-    buckets = []
-    for old_index, new_index in zip(indices, indices[1:] + [-1]):
-        bucket = X[old_index:new_index]
-        buckets.append(list(smooth_fft(bucket, stride)))
-
-    return np.concatenate(buckets)
-
-
-@mem.cache
 def features_from_mat(file_info, filename, stride=20):
+    """Loads a matlab file, and yields the smoothed FFT in 8-second blocks."""
     data, _sequence = load_matlab_file(filename)
-    for i in range(data.shape[0]/(SIZE * OVERLAP)):
-        start = SIZE * i * OVERLAP
-        fin = SIZE * (i * OVERLAP + 1)
-        X = np.concatenate(list(fft(data[start:fin, :], stride=stride)))
+    blocks = []
+
+    def block_at(i):
+        start = int(SIZE * i * OVERLAP)
+        fin = start + SIZE
+        return data.iloc[start:fin, :]
+
+    def features(block):
+        X = np.concatenate(list(fft(block, stride=stride)))
         y = results(file_info)
-        yield X, y
+        return bands(X), y
+
+    i_list = range(data.shape[0]//int(SIZE * OVERLAP) - 1)
+    blocks = map(block_at, i_list)
+
+    return map(features, blocks)
 
 
-
-
-# The fft measures up to 200hz, but we only care about frequencies up to 50hz
+# The fft measures up to 200hz (which is sample frequency / 2), but we only
+# care about frequencies up to 1..25hz
 def trim_fft(fft):
-    return fft[:len(fft) // 3]
+    """Trims unneccessary frequencies from the fft."""
+    avg = fft[0]
+    one_hz = fft.shape[0] // (FREQ / 2)
+    return np.hstack([[avg],
+                      fft[one_hz:len(fft) // 8]
+    ])
 
-# we have 150 * 10 * 60 samples
-# we have 150 * 10 * 30 frequencies in the fft
-# frequencies range from 0 hz to 150 hz
-# so fft element at index i has frequency i / (10 * 30)
-
+# we have 200 * 10 * 60 samples
+# we have 200 * 10 * 30 frequencies in the fft
+# frequencies range from 0 hz to 200 hz
+# so fft element at index i has frequency i / (10 * 40)
 def smooth_fft(fft, stride):
-    # Average adjancent frequencies proportional to the frequency.
-    i = 0
+    """Average adjancent frequencies proportional to the frequency."""
+    yield fft[0]
+    i = 1
     while i < len(fft):
-        bucket_size_elems = max(1, i / stride)
+        bucket_size_elems = max(5, i / stride)
         new_i = i + bucket_size_elems
         yield fft[i:min(len(fft), new_i)].mean()
         i = new_i
@@ -101,7 +111,7 @@ def regularize_fft(fft, stride):
         stride=stride)))
 
 
-def fft(data, stride=10):
+def fft(data, stride):
     for i in range(data.shape[1]):
         yield regularize_fft(
             np.fft.rfft(data.iloc[:, i]),
