@@ -21,24 +21,62 @@ import numpy as np
 
 
 def learn(X, y):
-    clf = Pipeline([
-        ('features', AverageLearner()),
-        ('clf', LogisticRegression())
-    ])
+    # clf = Pipeline([
+    #     ('features', FeatureUnion([
+    #         ('Average', AverageLearner()),
+    #         # ('Linear', WeightedAverage(linear_weights)),
+    #         ('Percentiles', Percentiles())])),
+    #     ('clf', LogisticRegression(C=50))
+    # ])
+
+    clf = AverageLearner()
 
     clf.fit(X, y)
     return clf
 
 
-def AverageLearner():
-    return FunctionTransformer(
-        lambda X, y=None: X.mean(axis=1)[:, np.newaxis])
+def Percentiles(buckets=10):
+
+    def ExtractPercentiles(X, y=None):
+        out = []
+        for row in range(X.shape[0]):
+            row_sorted = np.sort(X[row, :])
+            bucket_size = row_sorted.shape[0] / buckets
+            row_out = []
+            for bucket in range(buckets + 1):
+                index = min(bucket * bucket_size, row_sorted.shape[0] - 1)
+                row_out.append(row_sorted[index])
+            out.append(row_out)
+        return np.array(out)
+
+    return FunctionTransformer(ExtractPercentiles)
+
+
+class AverageLearner(object):
+    def fit(self,aX, y):
+        pass
+
+    def predict_proba(self, X):
+        avg = average(X)
+        return np.hstack([1-avg, avg])
+
+    def transform(self, X):
+        return average(X)
+
+
+def average(X, y=None):
+    return X.mean(axis=1)[:, np.newaxis]
+
+
+def AverageTransformer():
+    return FunctionTransformer(average)
 
 
 def weight_function(f):
     def func(X, y=None):
         return np.dot(X, f(X))
     return func
+
 
 def WeightedAverage(f):
     return FunctionTransformer(weight_function(f))

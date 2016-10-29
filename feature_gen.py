@@ -49,6 +49,8 @@ def postprocess_features(X):
     return X
 
 def bands(X, n_bands=10):
+
+    # TODO(phobbs) do shannon entropy within each band
     n = X.shape[0]
     band_size = n / n_bands
     X = np.hstack(
