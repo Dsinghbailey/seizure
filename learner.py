@@ -28,7 +28,6 @@ def learn(X, y):
     #         ('Percentiles', Percentiles())])),
     #     ('clf', LogisticRegression(C=50))
     # ])
-
     clf = AverageLearner()
 
     clf.fit(X, y)

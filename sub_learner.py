@@ -13,13 +13,13 @@ import random
 import os
 import pprint
 
-from feature_gen import create_train, results
+from feature_gen import create_train, results, mem
 from data_loader import load_metadata
 
 
 CLS_GBM = Pipeline([
     # ('transform', GaussianRandomProjection(random_state=2016)),
-    ('classifier', GradientBoostingClassifier(n_estimators=200,
+    ('classifier', GradientBoostingClassifier(n_estimators=100,
                                               random_state=2016))])
 PARAMS_GBM = {
     'classifier__subsample': [0.75, 0.8, 0.85, 0.9, 0.95, 1.0],
@@ -29,13 +29,14 @@ PARAMS_GBM = {
     'classifier__max_leaf_nodes': [int(4 * 1.25**i) for i in range(1, 10)],
     'classifier__min_impurity_split': [1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3],
     'classifier__max_features': ['log2', 'sqrt', 0.5, 0.75, 1.0],
-    'classifier__learning_rate': [0.1/2 * 1.05**i for i in range(-5, 5)],
+    'classifier__learning_rate': [0.1 * 1.05**i for i in range(-5, 5)],
     # 'transform__n_components': [60, 80, 120, 160, 240]
 }
 
 CLS_LOG_REG = Pipeline([
     ('normalize', Normalizer()),
     ('clf', LogisticRegression())])
+
 PARAMS_LOG_REG = {
     'clf__C': [0.0125, 0.025, 0.05, 0.1, 0.2, .4, .8, 1.2, 2.5, 5, 10, 20, 40, 80, 160]
 }
@@ -45,12 +46,12 @@ def find_hyperparameters(patient, X, y, cls, params):
     clf = RandomizedSearchCV(
         cls,
         params,
-        verbose=1,
-        n_iter=1,
+        verbose=3,
+        n_iter=5,
         iid=False,
         cv=list(cv(patient, X, y, count=3, random_seed=0)),
         scoring='roc_auc',
-        n_jobs=4
+        n_jobs=3
     )
     clf.fit(X, y)
     print "best params:"
@@ -60,8 +61,8 @@ def find_hyperparameters(patient, X, y, cls, params):
 
 def cv_score(patient, clf, X, y):
     scores = cross_val_score(clf, X, y,
-                             verbose=1,
-                             cv=list(cv(patient, X, y, count=1,
+                             verbose=2,
+                             cv=list(cv(patient, X, y, count=10,
                                         random_seed=2016)),
                              scoring='roc_auc', n_jobs=3)
     print scores
@@ -88,9 +89,10 @@ def cv(patient, X, y, count=3, test_size=0.3, random_seed=None):
     ).split(X, y, groups=hour_list)
 
 
+@mem.cache
 def sub_learn(patient=1):
     X, y = create_train(patient=patient)
-    clf = find_hyperparameters(patient, X, y, CLS_LOG_REG, PARAMS_LOG_REG)
+    clf = find_hyperparameters(patient, X, y, CLS_GBM, PARAMS_GBM)
     cv_score(patient, clf, X, y)
     clf.fit(X, y)
 
