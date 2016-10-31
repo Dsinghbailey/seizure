@@ -1,6 +1,8 @@
+import argparse
+import sys
+
 import numpy as np
 from tqdm import tqdm
-import argparse
 
 from feature_gen import mem
 from data_loader import load_matlab_file, load_metadata
@@ -86,7 +88,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--patient', default=1, type=int)
     parser.add_argument('--prefix', default='test')
-    args = parser.parse_args(sys.args)
+    args = parser.parse_args(sys.argv)
 
     for i, j, overlap in find_all_overlaps(args.patient, args.prefix):
         print '%s-%s with overlap %s' % (i, j, overlap)
