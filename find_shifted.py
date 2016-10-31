@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import argparse
 import sys
 
@@ -16,7 +18,7 @@ def signature(X, threshold=10):
         nonzeros = all_times[channels == 7]
     else:
         nonzeros = nonzeros[0]
-    return gaps(nonzeros)
+    return gaps(nonzeros), np.cumsum(nonzeros)
 
 
 def gaps(X):
@@ -45,21 +47,35 @@ def load_hours(patient, prefix):
         for hour in tqdm(range(len(files) / 6))]
 
 
-def find_all_overlaps(patient, prefix):
+@mem.cache
+def load_signatures(patient, prefix, **sig_kwargs):
     hours = load_hours(patient, prefix)
+    print 'Making signatures:'
+    return zip(*[
+        signature(h, **sig_kwargs)
+        for h in tqdm(hours)])
 
-    hours_sigs = map(signature, hours)
+
+def find_all_overlaps(patient, prefix):
+    hours, hours_indices = load_signatures(patient, prefix, threshold=10)
 
     print 'Finding overlaps...'
-    for i in tqdm(range(len(hours))):
+    for i in range(len(hours)):
         for j in range(i):
             overlap = find_overlap(hours[i], hours[j])
             if overlap:
-                yield i, j, overlap
+                a_index = hours_indices[i][overlap[0]]
+                b_index = hours_indices[j][overlap[1]]
+                yield i, j, b_index - a_index
 
+
+def swap(x):
+    if not x: return x
+    b, a = x
+    return a, b
 
 def find_overlap(a, b):
-    return contained_in(a, b) or contained_in(b, a)
+    return contained_in(a, b) or swap(contained_in(b, a))
 
 
 def contained_in(a, b):
@@ -69,7 +85,7 @@ def contained_in(a, b):
         i = 0
     for j in range(len(b)):
         if match_at(a, b, i, j):
-            return j - i
+            return (i, j)
     return None
 
 
@@ -88,10 +104,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--patient', default=1, type=int)
     parser.add_argument('--prefix', default='test')
-    args = parser.parse_args(sys.argv)
+    args = parser.parse_args(sys.argv[1:])
 
     for i, j, overlap in find_all_overlaps(args.patient, args.prefix):
-        print '%s-%s with overlap %s' % (i, j, overlap)
+        print '%s matches %s with overlap %s' % (i, j, overlap)
 
 
 if __name__ == '__main__':
